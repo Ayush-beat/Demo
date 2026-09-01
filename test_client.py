@@ -85,7 +85,7 @@ async def run_streaming_test(duration_sec: float = 6.0):
 
                         event_type = data.get("event")
                         if event_type == "connected":
-                            print(f"[SERVER HANDSHAKE] Client ID: {data.get('client_id')}")
+                            print(f"[SERVER HANDSHAKE] Client ID: {data.get('client_id')} | IP: {data.get('client_ip')}")
 
                         elif event_type == "vad_silence":
                             print(f"[VAD EVENT] Win #{data.get('window_index')}: SILENCE DROPPED (VAD Prob: {data.get('vad_prob'):.2f})")

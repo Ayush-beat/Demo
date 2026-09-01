@@ -30,7 +30,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("voice_gateway")
 
-# Base directory
+# Base directory configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
@@ -55,6 +55,38 @@ onnx_session: Optional[ort.InferenceSession] = None
 onnx_input_name: str = "input_audio"
 onnx_output_name: str = "spoof_prob"
 inference_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="onnx_worker")
+
+
+def get_client_ip(websocket: WebSocket) -> str:
+    """
+    Extracts the client IP address from WebSocket connection headers or socket info.
+    Supports reverse proxy configurations (Render, Cloudflare, Nginx) by inspecting
+    'x-forwarded-for' (parsing the first IP in proxy chains) and 'x-real-ip'.
+    Falls back safely to direct socket client.host or '127.0.0.1'.
+    """
+    try:
+        # 1. Check X-Forwarded-For header (handles comma-separated proxy chains)
+        forwarded_for = websocket.headers.get("x-forwarded-for")
+        if forwarded_for:
+            first_ip = forwarded_for.split(",")[0].strip()
+            if first_ip:
+                return first_ip
+
+        # 2. Check X-Real-IP header
+        real_ip = websocket.headers.get("x-real-ip")
+        if real_ip and real_ip.strip():
+            return real_ip.strip()
+
+        # 3. Check direct socket client host info
+        if websocket.client and websocket.client.host:
+            host = websocket.client.host.strip()
+            if host:
+                return host
+    except Exception as exc:
+        logger.debug(f"Could not resolve client IP from WebSocket: {exc}")
+
+    # 4. Default fallback
+    return "127.0.0.1"
 
 
 def init_onnx_model():
@@ -190,10 +222,12 @@ async def healthcheck():
 
 async def handle_audio_websocket(websocket: WebSocket):
     """
-    Common handler for WebSocket audio streaming ingestion.
+    Common handler for WebSocket audio streaming ingestion with client IP extraction & telemetry.
     """
+    client_ip = get_client_ip(websocket)
     client_id = f"client_{int(time.time() * 1000)}_{os.urandom(3).hex()}"
     await manager.connect(client_id, websocket)
+    logger.info(f"[+] Stream connected from Client IP: {client_ip} (ID: {client_id})")
 
     audio_buffer = CircularAudioBuffer(sample_rate=16000, window_duration=2.0, hop_duration=0.5)
     vad = VoiceActivityDetector(silero_onnx_path="silero_vad.onnx", threshold=0.5, energy_threshold=0.015)
@@ -203,6 +237,7 @@ async def handle_audio_websocket(websocket: WebSocket):
     await websocket.send_json({
         "event": "connected",
         "client_id": client_id,
+        "client_ip": client_ip,
         "message": "Gateway ready for 16kHz PCM audio stream.",
         "config": {
             "sample_rate": 16000,
@@ -235,6 +270,7 @@ async def handle_audio_websocket(websocket: WebSocket):
                         response_payload = {
                             "event": "vad_silence",
                             "timestamp": time.time(),
+                            "client_ip": client_ip,
                             "vad_active": False,
                             "vad_prob": round(float(vad_prob), 4),
                             "label": "SILENCE",
@@ -258,6 +294,7 @@ async def handle_audio_websocket(websocket: WebSocket):
                     response_payload = {
                         "event": "classification",
                         "timestamp": time.time(),
+                        "client_ip": client_ip,
                         "vad_active": True,
                         "vad_prob": round(float(vad_prob), 4),
                         "is_spoof": inference_res["is_spoof"],
@@ -280,16 +317,16 @@ async def handle_audio_websocket(websocket: WebSocket):
                     if cmd == "reset":
                         audio_buffer.reset()
                         vad.reset_state()
-                        await websocket.send_json({"event": "buffer_reset", "status": "ok"})
+                        await websocket.send_json({"event": "buffer_reset", "status": "ok", "client_ip": client_ip})
                     elif cmd == "ping":
-                        await websocket.send_json({"event": "pong", "time": time.time()})
+                        await websocket.send_json({"event": "pong", "time": time.time(), "client_ip": client_ip})
                 except json.JSONDecodeError:
                     pass
 
     except WebSocketDisconnect:
-        logger.info(f"WebSocket client [{client_id}] disconnected cleanly.")
+        logger.info(f"[-] Client {client_ip} ({client_id}) disconnected cleanly.")
     except Exception as exc:
-        logger.warning(f"WebSocket exception on [{client_id}]: {exc}", exc_info=False)
+        logger.warning(f"[-] WebSocket exception on Client {client_ip} ({client_id}): {exc}", exc_info=False)
     finally:
         manager.disconnect(client_id)
         audio_buffer.reset()
@@ -309,6 +346,8 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 # Mount static files
 if os.path.exists(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+elif os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 if __name__ == "__main__":

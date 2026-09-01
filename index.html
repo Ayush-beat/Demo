@@ -573,6 +573,9 @@
     function handleServerMessage(data) {
       if (data.event === 'connected') {
         console.log('[Server Handshake]', data);
+        if (data.client_ip) {
+          updateConnectionStatus(`CONNECTED (${data.client_ip})`, 'bg-emerald-500');
+        }
         return;
       }
 
