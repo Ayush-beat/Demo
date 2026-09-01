@@ -191,11 +191,12 @@ def create_onnx_model(output_path: str = DEFAULT_MODEL_PATH) -> str:
         ],
     )
 
-    # Create ONNX model with standard opset 14
+    # Create ONNX model with standard opset 14 and backward-compatible IR version 8
     model = helper.make_model(
         graph,
         producer_name="VoiceSpoofDetector",
         opset_imports=[helper.make_opsetid("", 14)],
+        ir_version=8,
     )
 
     # Validate graph structure and type consistency
