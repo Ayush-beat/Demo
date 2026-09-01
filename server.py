@@ -161,12 +161,12 @@ manager = ConnectionManager()
 async def get_index():
     """Serves the frontend single-page dashboard directly."""
     index_path = os.path.join(STATIC_DIR, "index.html")
-    if not os.path.exists(index_path):
-        root_index = os.path.join(BASE_DIR, "index.html")
-        if os.path.exists(root_index):
-            return FileResponse(root_index)
-        raise HTTPException(status_code=404, detail="index.html not found.")
-    return FileResponse(index_path)
+    if os.path.exists(index_path):
+        return FileResponse(index_path, media_type="text/html")
+    root_index = os.path.join(BASE_DIR, "index.html")
+    if os.path.exists(root_index):
+        return FileResponse(root_index, media_type="text/html")
+    raise HTTPException(status_code=404, detail="index.html not found.")
 
 
 @app.get("/health")

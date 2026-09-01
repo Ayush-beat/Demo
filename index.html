@@ -344,15 +344,36 @@
     let packetCount = 0;
     let animationFrameId = null;
     let reconnectTimer = null;
+    let reconnectAttempts = 0;
+    const INITIAL_RECONNECT_DELAY_MS = 2000;
+    const MAX_RECONNECT_DELAY_MS = 5000;
 
-    // Dynamic Resilient WebSocket URL calculation
+    // Dynamic Resilient WebSocket URL calculation (wss:// vs ws:// based on page protocol)
     function getWebSocketUrl() {
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+      const isHttps = window.location.protocol === 'https:';
+      const wsProtocol = isHttps ? 'wss://' : 'ws://';
       const wsHost = (window.location.host && window.location.host.trim() !== '') ? window.location.host : 'localhost:8000';
       return `${wsProtocol}${wsHost}/ws/stream`;
     }
 
-    // Initialize WebSocket with resilient auto-reconnection
+    // Schedule next reconnection attempt with exponential backoff (2s -> 3s -> 4.5s -> 5s max)
+    function scheduleReconnect() {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
+      reconnectAttempts++;
+      const delay = Math.min(INITIAL_RECONNECT_DELAY_MS * Math.pow(1.5, reconnectAttempts - 1), MAX_RECONNECT_DELAY_MS);
+      const delaySec = (delay / 1000).toFixed(1);
+
+      console.warn(`[WebSocket] Scheduling reconnect attempt #${reconnectAttempts} in ${delaySec}s...`);
+      updateConnectionStatus(`RECONNECTING (${delaySec}s)...`, 'bg-amber-500');
+
+      reconnectTimer = setTimeout(() => {
+        initWebSocket();
+      }, delay);
+    }
+
+    // Initialize WebSocket with resilient auto-reconnection for Render cold-starts
     function initWebSocket() {
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
@@ -372,8 +393,8 @@
       }
 
       const wsUrl = getWebSocketUrl();
-      console.log(`[WebSocket] Connecting to: ${wsUrl}`);
-      updateConnectionStatus('CONNECTING...', 'bg-amber-500');
+      console.log(`[WebSocket] Connecting to: ${wsUrl} (Attempt #${reconnectAttempts + 1})`);
+      updateConnectionStatus(reconnectAttempts > 0 ? `WAKING SERVER (#${reconnectAttempts})...` : 'CONNECTING...', 'bg-amber-500');
 
       try {
         websocket = new WebSocket(wsUrl);
@@ -381,6 +402,11 @@
 
         websocket.onopen = () => {
           console.log('[WebSocket] Connection established successfully.');
+          reconnectAttempts = 0;
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
           updateConnectionStatus('CONNECTED', 'bg-emerald-500');
         };
 
@@ -394,28 +420,25 @@
         };
 
         websocket.onclose = (event) => {
-          console.warn(`[WebSocket] Disconnected (Code: ${event.code}). Retrying in 3s...`);
-          updateConnectionStatus('DISCONNECTED (Retrying...)', 'bg-rose-500');
+          console.warn(`[WebSocket] Disconnected (Code: ${event.code}). Auto-reconnecting...`);
           if (isStreaming) {
             stopStreaming();
           }
-          // Automatic reconnection every 3 seconds
-          reconnectTimer = setTimeout(() => {
-            initWebSocket();
-          }, 3000);
+          scheduleReconnect();
         };
 
         websocket.onerror = (err) => {
           console.error('[WebSocket] Error event:', err);
           updateConnectionStatus('CONNECT ERROR', 'bg-rose-600');
+          if (!websocket || websocket.readyState === WebSocket.CLOSED) {
+            scheduleReconnect();
+          }
         };
 
       } catch (err) {
         console.error('[WebSocket] Exception during initialization:', err);
         updateConnectionStatus('SERVER OFFLINE', 'bg-rose-600');
-        reconnectTimer = setTimeout(() => {
-          initWebSocket();
-        }, 3000);
+        scheduleReconnect();
       }
     }
 
@@ -457,7 +480,7 @@
     // Start Live Audio Streaming
     async function startStreaming() {
       if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-        alert('WebSocket is currently disconnected. Attempting to connect to server at ' + getWebSocketUrl() + '...\n\nPlease ensure the backend is running via:\nuvicorn server:app --host 0.0.0.0 --port 8000 --reload');
+        alert('WebSocket is currently connecting or waking up from sleep.\n\nPlease wait a moment while the server establishes connection, then click Start Audio Streaming again.');
         initWebSocket();
         return;
       }

@@ -4,8 +4,7 @@ FROM python:3.10-slim
 # Set environment variables for performance and clean logging
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
-    PORT=8000
+    PYTHONPATH=/app
 
 WORKDIR /app
 
@@ -34,7 +33,7 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
+  CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# Run FastAPI with Uvicorn
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run FastAPI with Uvicorn dynamically binding to Render's $PORT
+CMD uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}
