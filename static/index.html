@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice Anti-Spoofing & Deepfake Detection Gateway</title>
+  <!-- Google Fonts & Tailwind CSS CDN -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              500: '#10b981',
+              600: '#059669',
+              900: '#064e3b'
+            },
+            spoof: {
+              500: '#ef4444',
+              600: '#dc2626',
+              900: '#7f1d1d'
+            },
+            dark: {
+              800: '#111827',
+              850: '#0f172a',
+              900: '#0b0f19',
+              950: '#05070d'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #07090e;
+      color: #e2e8f0;
+    }
+    .glow-bonafide {
+      box-shadow: 0 0 25px rgba(16, 185, 129, 0.35);
+      border-color: rgba(16, 185, 129, 0.8);
+    }
+    .glow-spoof {
+      box-shadow: 0 0 30px rgba(239, 68, 68, 0.45);
+      border-color: rgba(239, 68, 68, 0.9);
+      animation: pulse-red 1.8s infinite;
+    }
+    .glow-cyan {
+      box-shadow: 0 0 20px rgba(6, 182, 212, 0.25);
+    }
+    @keyframes pulse-red {
+      0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.4); }
+      50% { box-shadow: 0 0 40px rgba(239, 68, 68, 0.75); }
+    }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .progress-gradient {
+      transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans selection:bg-emerald-500 selection:text-black">
+
+  <!-- FILE PROTOCOL WARNING BANNER (Auto-displays if opened as file:///) -->
+  <div id="fileProtocolBanner" class="hidden bg-amber-500/10 border-b border-amber-500/30 px-4 py-3 text-amber-300 text-xs font-mono">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <svg class="w-5 h-5 text-amber-400 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+        </svg>
+        <span>
+          <strong>Direct File Notice:</strong> You opened this file via <code class="bg-amber-950 px-1 py-0.5 rounded text-amber-200">file:///</code>. Browsers restrict microphone access (<code class="bg-amber-950 px-1 py-0.5 rounded text-amber-200">getUserMedia</code>) on local files. For full functionality, open: <a href="http://localhost:8000" class="underline font-bold text-white hover:text-amber-200 ml-1">http://localhost:8000</a>
+        </span>
+      </div>
+      <button onclick="document.getElementById('fileProtocolBanner').remove()" class="text-amber-400 hover:text-white font-bold ml-4">✕</button>
+    </div>
+  </div>
+
+  <!-- TOP APP BAR -->
+  <header class="border-b border-slate-800/80 glass-card sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+          <svg class="w-5 h-5 text-black font-bold" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            VOICE-SHIELD <span class="text-xs px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800 font-mono">GATEWAY v1.0</span>
+          </h1>
+          <p class="text-xs text-slate-400 font-mono">16 kHz PCM • 2.0s Sliding Window • Sub-50ms ONNX Engine</p>
+        </div>
+      </div>
+
+      <!-- Socket Status Badge -->
+      <div class="flex items-center space-x-4">
+        <div id="connectionPill" class="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-700 text-xs font-mono">
+          <span id="connectionDot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping"></span>
+          <span id="connectionText" class="text-slate-300">DISCONNECTED</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full space-y-6">
+
+    <!-- PRIMARY ALERT BANNER -->
+    <div id="decisionCard" class="glass-card rounded-2xl p-6 transition-all duration-300 border-2 border-slate-700/60 relative overflow-hidden">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+        
+        <div class="flex items-center space-x-5">
+          <div id="decisionIconBox" class="w-16 h-16 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center shrink-0">
+            <svg id="decisionIcon" class="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-3">
+              <span id="decisionBadge" class="text-xs uppercase px-2.5 py-1 rounded-md font-mono font-bold tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
+                STANDBY
+              </span>
+              <span id="vadBadge" class="text-xs px-2.5 py-1 rounded-md font-mono bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1.5">
+                <span id="vadDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                <span id="vadText">VAD: IDLE</span>
+              </span>
+            </div>
+            <h2 id="decisionTitle" class="text-2xl sm:text-3xl font-extrabold text-white mt-1 tracking-tight">
+              Awaiting Live Audio Stream
+            </h2>
+            <p id="decisionSubtitle" class="text-sm text-slate-400 mt-0.5">
+              Click 'Start Audio Streaming' to ingest 16kHz microphone stream into the classification pipeline.
+            </p>
+          </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex items-center space-x-3 w-full md:w-auto justify-end">
+          <button id="btnStart" class="w-full md:w-auto px-6 py-3.5 rounded-xl font-semibold text-sm bg-gradient-to-r from-emerald-500 to-teal-500 text-black hover:from-emerald-400 hover:to-teal-400 shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"/>
+            </svg>
+            Start Audio Streaming
+          </button>
+          <button id="btnStop" disabled class="w-full md:w-auto px-6 py-3.5 rounded-xl font-semibold text-sm bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700/60 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-all flex items-center justify-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/>
+            </svg>
+            Stop Streaming
+          </button>
+        </div>
+      </div>
+
+      <!-- CONFIDENCE SCORE BAR -->
+      <div class="mt-6 pt-5 border-t border-slate-800">
+        <div class="flex items-center justify-between text-xs font-mono mb-2">
+          <span class="text-emerald-400 font-semibold flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            BONAFIDE (REAL): <span id="bonafideScoreVal">0.00%</span>
+          </span>
+          <span class="text-slate-400 font-medium">SPOOF PROBABILITY METER</span>
+          <span class="text-rose-400 font-semibold flex items-center gap-1.5">
+            SPOOF (SYNTHETIC): <span id="spoofScoreVal">0.00%</span>
+            <span class="w-2 h-2 rounded-full bg-rose-400"></span>
+          </span>
+        </div>
+        <div class="w-full h-3.5 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-800">
+          <div id="spoofProgressBar" class="h-full rounded-full progress-gradient bg-emerald-500" style="width: 0%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VISUALIZER & METRICS GRID -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- AUDIO WAVEFORM VISUALIZER -->
+      <div class="lg:col-span-2 glass-card rounded-2xl p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+            <h3 class="text-sm font-semibold text-white font-mono tracking-wide">LIVE 16kHz OSCILLOSCOPE</h3>
+          </div>
+          <span id="sampleRateLabel" class="text-xs font-mono text-slate-400">Input: WebAudio Linear Resampler (16,000 Hz)</span>
+        </div>
+        <div class="relative w-full h-40 bg-slate-950/80 rounded-xl overflow-hidden border border-slate-800">
+          <canvas id="waveformCanvas" class="w-full h-full"></canvas>
+          <div id="waveformOverlay" class="absolute inset-0 flex items-center justify-center text-xs font-mono text-slate-500 bg-slate-950/60 backdrop-blur-[2px]">
+            Microphone Inactive
+          </div>
+        </div>
+        <div class="mt-3 flex items-center justify-between text-xs font-mono text-slate-400">
+          <span>Buffer: 2.0s (32,000 samples)</span>
+          <span>Slide Hop: 500ms (8,000 samples)</span>
+          <span>Quantization: 16-bit PCM Mono</span>
+        </div>
+      </div>
+
+      <!-- PERFORMANCE & TELEMETRY PANEL -->
+      <div class="glass-card rounded-2xl p-5 flex flex-col justify-between space-y-4">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold text-white font-mono tracking-wide">PIPELINE TELEMETRY</h3>
+            <span class="text-xs px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono">ONLINE</span>
+          </div>
+
+          <div class="space-y-3">
+            <!-- Inference Latency -->
+            <div class="bg-slate-900/90 rounded-xl p-3 border border-slate-800 flex items-center justify-between">
+              <div>
+                <div class="text-xs text-slate-400 font-mono">ONNX Inference Latency</div>
+                <div class="text-lg font-bold font-mono text-white mt-0.5" id="metricInferenceLat">-- ms</div>
+              </div>
+              <span id="sub50Badge" class="text-[10px] font-mono px-2 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                &lt; 50ms TARGET
+              </span>
+            </div>
+
+            <!-- Total Pipeline Latency -->
+            <div class="bg-slate-900/90 rounded-xl p-3 border border-slate-800 flex items-center justify-between">
+              <div>
+                <div class="text-xs text-slate-400 font-mono">Total Turnaround Latency</div>
+                <div class="text-lg font-bold font-mono text-cyan-400 mt-0.5" id="metricTotalLat">-- ms</div>
+              </div>
+              <span class="text-[10px] font-mono text-slate-400">Ingest + VAD + ONNX</span>
+            </div>
+
+            <!-- VAD Speech Probability -->
+            <div class="bg-slate-900/90 rounded-xl p-3 border border-slate-800 flex items-center justify-between">
+              <div>
+                <div class="text-xs text-slate-400 font-mono">Voice Activity (VAD) Prob</div>
+                <div class="text-lg font-bold font-mono text-white mt-0.5" id="metricVadProb">-- %</div>
+              </div>
+              <div class="text-right">
+                <span id="metricVadFrames" class="text-xs font-mono text-slate-400">0 windows</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-[11px] font-mono text-slate-500 border-t border-slate-800/80 pt-2 flex justify-between">
+          <span>Engine: ONNX Runtime CPU</span>
+          <span id="streamPacketsCount">Packets: 0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- LIVE CLASSIFICATION EVENT LOG -->
+    <div class="glass-card rounded-2xl p-5">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center space-x-2">
+          <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+          <h3 class="text-sm font-semibold text-white font-mono tracking-wide">REAL-TIME CLASSIFICATION AUDIT LOG</h3>
+        </div>
+        <button id="btnClearLogs" class="text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors">Clear Log</button>
+      </div>
+
+      <div class="w-full overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/70">
+        <table class="w-full text-left text-xs font-mono">
+          <thead class="bg-slate-900/80 text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="py-2.5 px-4">TIMESTAMP</th>
+              <th class="py-2.5 px-4">WINDOW #</th>
+              <th class="py-2.5 px-4">VAD STATUS</th>
+              <th class="py-2.5 px-4">DECISION</th>
+              <th class="py-2.5 px-4">BONAFIDE CONF</th>
+              <th class="py-2.5 px-4">SPOOF CONF</th>
+              <th class="py-2.5 px-4">INFERENCE LATENCY</th>
+              <th class="py-2.5 px-4">TOTAL LATENCY</th>
+            </tr>
+          </thead>
+          <tbody id="logTableBody" class="divide-y divide-slate-800/60 text-slate-300">
+            <tr id="emptyLogRow">
+              <td colspan="8" class="py-6 text-center text-slate-500">No audio classifications recorded yet. Start streaming audio to generate live telemetry.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- JAVASCRIPT STREAMING & AUDIO ENGINE -->
+  <script>
+    // Configuration constants
+    const TARGET_SAMPLE_RATE = 16000;
+    const BUFFER_SIZE = 4096;
+
+    // Check for file:/// protocol
+    if (window.location.protocol === 'file:') {
+      const banner = document.getElementById('fileProtocolBanner');
+      if (banner) banner.classList.remove('hidden');
+    }
+
+    // DOM Elements
+    const connectionPill = document.getElementById('connectionPill');
+    const connectionDot = document.getElementById('connectionDot');
+    const connectionText = document.getElementById('connectionText');
+    const btnStart = document.getElementById('btnStart');
+    const btnStop = document.getElementById('btnStop');
+    const btnClearLogs = document.getElementById('btnClearLogs');
+    const decisionCard = document.getElementById('decisionCard');
+    const decisionBadge = document.getElementById('decisionBadge');
+    const decisionTitle = document.getElementById('decisionTitle');
+    const decisionSubtitle = document.getElementById('decisionSubtitle');
+    const decisionIconBox = document.getElementById('decisionIconBox');
+    const vadBadge = document.getElementById('vadBadge');
+    const vadDot = document.getElementById('vadDot');
+    const vadText = document.getElementById('vadText');
+    const bonafideScoreVal = document.getElementById('bonafideScoreVal');
+    const spoofScoreVal = document.getElementById('spoofScoreVal');
+    const spoofProgressBar = document.getElementById('spoofProgressBar');
+    const waveformCanvas = document.getElementById('waveformCanvas');
+    const waveformOverlay = document.getElementById('waveformOverlay');
+    const metricInferenceLat = document.getElementById('metricInferenceLat');
+    const metricTotalLat = document.getElementById('metricTotalLat');
+    const metricVadProb = document.getElementById('metricVadProb');
+    const metricVadFrames = document.getElementById('metricVadFrames');
+    const streamPacketsCount = document.getElementById('streamPacketsCount');
+    const sub50Badge = document.getElementById('sub50Badge');
+    const logTableBody = document.getElementById('logTableBody');
+    const emptyLogRow = document.getElementById('emptyLogRow');
+
+    // Audio & Streaming State
+    let audioContext = null;
+    let micStream = null;
+    let scriptProcessor = null;
+    let analyser = null;
+    let websocket = null;
+    let isStreaming = false;
+    let packetCount = 0;
+    let animationFrameId = null;
+    let reconnectTimer = null;
+
+    // Dynamic Resilient WebSocket URL calculation
+    function getWebSocketUrl() {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+      const wsHost = (window.location.host && window.location.host.trim() !== '') ? window.location.host : 'localhost:8000';
+      return `${wsProtocol}${wsHost}/ws/stream`;
+    }
+
+    // Initialize WebSocket with resilient auto-reconnection
+    function initWebSocket() {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+
+      if (websocket) {
+        try {
+          websocket.onopen = null;
+          websocket.onclose = null;
+          websocket.onerror = null;
+          websocket.onmessage = null;
+          if (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING) {
+            websocket.close();
+          }
+        } catch (e) {}
+      }
+
+      const wsUrl = getWebSocketUrl();
+      console.log(`[WebSocket] Connecting to: ${wsUrl}`);
+      updateConnectionStatus('CONNECTING...', 'bg-amber-500');
+
+      try {
+        websocket = new WebSocket(wsUrl);
+        websocket.binaryType = 'arraybuffer';
+
+        websocket.onopen = () => {
+          console.log('[WebSocket] Connection established successfully.');
+          updateConnectionStatus('CONNECTED', 'bg-emerald-500');
+        };
+
+        websocket.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            handleServerMessage(payload);
+          } catch (e) {
+            console.error('[WebSocket] JSON Parse error:', e);
+          }
+        };
+
+        websocket.onclose = (event) => {
+          console.warn(`[WebSocket] Disconnected (Code: ${event.code}). Retrying in 3s...`);
+          updateConnectionStatus('DISCONNECTED (Retrying...)', 'bg-rose-500');
+          if (isStreaming) {
+            stopStreaming();
+          }
+          // Automatic reconnection every 3 seconds
+          reconnectTimer = setTimeout(() => {
+            initWebSocket();
+          }, 3000);
+        };
+
+        websocket.onerror = (err) => {
+          console.error('[WebSocket] Error event:', err);
+          updateConnectionStatus('CONNECT ERROR', 'bg-rose-600');
+        };
+
+      } catch (err) {
+        console.error('[WebSocket] Exception during initialization:', err);
+        updateConnectionStatus('SERVER OFFLINE', 'bg-rose-600');
+        reconnectTimer = setTimeout(() => {
+          initWebSocket();
+        }, 3000);
+      }
+    }
+
+    function updateConnectionStatus(status, colorClass) {
+      connectionText.innerText = status;
+      connectionDot.className = `w-2.5 h-2.5 rounded-full ${colorClass} animate-pulse`;
+    }
+
+    // Downsample and convert Float32 audio chunk to 16kHz Int16 Little-Endian PCM
+    function resampleAndConvertToPCM16(inputBuffer, inputSampleRate, targetSampleRate) {
+      let samples;
+      if (inputSampleRate === targetSampleRate) {
+        samples = inputBuffer;
+      } else {
+        // Linear Interpolation Resampling
+        const ratio = inputSampleRate / targetSampleRate;
+        const newLength = Math.round(inputBuffer.length / ratio);
+        samples = new Float32Array(newLength);
+        for (let i = 0; i < newLength; i++) {
+          const originalIndex = i * ratio;
+          const leftIndex = Math.floor(originalIndex);
+          const rightIndex = Math.min(leftIndex + 1, inputBuffer.length - 1);
+          const weight = originalIndex - leftIndex;
+          samples[i] = inputBuffer[leftIndex] * (1 - weight) + inputBuffer[rightIndex] * weight;
+        }
+      }
+
+      // Convert Float32 [-1.0, 1.0] to Int16 Little-Endian Bytes
+      const buffer = new ArrayBuffer(samples.length * 2);
+      const view = new DataView(buffer);
+      for (let i = 0; i < samples.length; i++) {
+        let s = Math.max(-1, Math.min(1, samples[i]));
+        let val = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        view.setInt16(i * 2, val, true); // Little Endian
+      }
+      return buffer;
+    }
+
+    // Start Live Audio Streaming
+    async function startStreaming() {
+      if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+        alert('WebSocket is currently disconnected. Attempting to connect to server at ' + getWebSocketUrl() + '...\n\nPlease ensure the backend is running via:\nuvicorn server:app --host 0.0.0.0 --port 8000 --reload');
+        initWebSocket();
+        return;
+      }
+
+      try {
+        // Request microphone permission
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+
+        // Initialize AudioContext
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContextClass();
+
+        const source = audioContext.createMediaStreamSource(micStream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+
+        // ScriptProcessorNode to capture raw PCM frames
+        scriptProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
+        source.connect(scriptProcessor);
+        scriptProcessor.connect(audioContext.destination);
+
+        const nativeSampleRate = audioContext.sampleRate;
+        console.log(`[AudioContext] Native Sample Rate: ${nativeSampleRate} Hz -> Resampling to ${TARGET_SAMPLE_RATE} Hz`);
+
+        scriptProcessor.onaudioprocess = (e) => {
+          if (!isStreaming) return;
+          const inputData = e.inputBuffer.getChannelData(0);
+
+          // Downsample and convert to 16-bit PCM binary
+          const pcm16Buffer = resampleAndConvertToPCM16(inputData, nativeSampleRate, TARGET_SAMPLE_RATE);
+
+          // Stream binary chunk over WebSocket
+          if (websocket && websocket.readyState === WebSocket.OPEN) {
+            websocket.send(pcm16Buffer);
+            packetCount++;
+            streamPacketsCount.innerText = `Packets: ${packetCount}`;
+          }
+        };
+
+        isStreaming = true;
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+        waveformOverlay.style.display = 'none';
+
+        // Update UI state
+        setUIStandbyStreaming();
+        drawWaveform();
+
+      } catch (err) {
+        console.error('[Audio] Error accessing microphone:', err);
+        alert('Could not access microphone: ' + err.message + '\n\nMake sure to open this page via http://localhost:8000 rather than file:///');
+      }
+    }
+
+    // Stop Streaming
+    function stopStreaming() {
+      isStreaming = false;
+      btnStart.disabled = false;
+      btnStop.disabled = true;
+      waveformOverlay.style.display = 'flex';
+
+      if (scriptProcessor) {
+        scriptProcessor.disconnect();
+        scriptProcessor = null;
+      }
+      if (micStream) {
+        micStream.getTracks().forEach(track => track.stop());
+        micStream = null;
+      }
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close();
+        audioContext = null;
+      }
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+
+      setUIIdle();
+    }
+
+    // Handle incoming JSON classification messages from server
+    function handleServerMessage(data) {
+      if (data.event === 'connected') {
+        console.log('[Server Handshake]', data);
+        return;
+      }
+
+      if (data.event === 'vad_silence') {
+        updateVADUI(false, data.vad_prob);
+        metricVadProb.innerText = `${(data.vad_prob * 100).toFixed(1)} %`;
+        metricVadFrames.innerText = `Win #${data.window_index}`;
+        return;
+      }
+
+      if (data.event === 'classification') {
+        updateVADUI(true, data.vad_prob);
+        updateScoresUI(data);
+        appendLogRow(data);
+      }
+    }
+
+    function updateVADUI(isActive, prob) {
+      if (isActive) {
+        vadBadge.className = 'text-xs px-2.5 py-1 rounded-md font-mono bg-emerald-950 text-emerald-400 border border-emerald-700 flex items-center gap-1.5';
+        vadDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
+        vadText.innerText = `VAD: VOICE ACTIVE (${(prob * 100).toFixed(0)}%)`;
+      } else {
+        vadBadge.className = 'text-xs px-2.5 py-1 rounded-md font-mono bg-slate-900 text-slate-400 border border-slate-800 flex items-center gap-1.5';
+        vadDot.className = 'w-2 h-2 rounded-full bg-slate-600';
+        vadText.innerText = `VAD: SILENCE DROPPED`;
+      }
+    }
+
+    function updateScoresUI(data) {
+      const spoofPercent = (data.spoof_confidence * 100).toFixed(1);
+      const bonafidePercent = (data.bonafide_confidence * 100).toFixed(1);
+
+      spoofScoreVal.innerText = `${spoofPercent}%`;
+      bonafideScoreVal.innerText = `${bonafidePercent}%`;
+      spoofProgressBar.style.width = `${spoofPercent}%`;
+
+      // Update telemetry cards
+      metricInferenceLat.innerText = `${data.inference_latency_ms} ms`;
+      metricTotalLat.innerText = `${data.total_pipeline_latency_ms} ms`;
+      metricVadProb.innerText = `${(data.vad_prob * 100).toFixed(1)} %`;
+      metricVadFrames.innerText = `Win #${data.window_index}`;
+
+      // Latency sub-50ms check
+      if (data.inference_latency_ms <= 50) {
+        sub50Badge.className = 'text-[10px] font-mono px-2 py-1 rounded bg-emerald-950 text-emerald-400 border border-emerald-800';
+        sub50Badge.innerText = '✓ < 50ms PASS';
+      } else {
+        sub50Badge.className = 'text-[10px] font-mono px-2 py-1 rounded bg-amber-950 text-amber-400 border border-amber-800';
+        sub50Badge.innerText = `⚠ ${data.inference_latency_ms}ms`;
+      }
+
+      if (data.is_spoof) {
+        // SPOOF DETECTED
+        decisionCard.className = 'glass-card rounded-2xl p-6 transition-all duration-300 border-2 glow-spoof bg-rose-950/20';
+        decisionBadge.className = 'text-xs uppercase px-2.5 py-1 rounded-md font-mono font-bold tracking-wider bg-rose-950 text-rose-300 border border-rose-700';
+        decisionBadge.innerText = 'CRITICAL ALERT: SPOOF DETECTED';
+        decisionTitle.innerText = 'Synthetic / Deepfake Voice Detected';
+        decisionTitle.className = 'text-2xl sm:text-3xl font-extrabold text-rose-400 mt-1 tracking-tight';
+        decisionSubtitle.innerText = `Model identified synthetic or cloned acoustic artifacts with ${spoofPercent}% confidence.`;
+        decisionIconBox.className = 'w-16 h-16 rounded-2xl bg-rose-950/80 border border-rose-600 flex items-center justify-center shrink-0';
+        decisionIconBox.innerHTML = `
+          <svg class="w-8 h-8 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+        `;
+        spoofProgressBar.className = 'h-full rounded-full progress-gradient bg-rose-500 shadow-lg shadow-rose-500/50';
+      } else {
+        // BONAFIDE VOICE
+        decisionCard.className = 'glass-card rounded-2xl p-6 transition-all duration-300 border-2 glow-bonafide bg-emerald-950/20';
+        decisionBadge.className = 'text-xs uppercase px-2.5 py-1 rounded-md font-mono font-bold tracking-wider bg-emerald-950 text-emerald-300 border border-emerald-700';
+        decisionBadge.innerText = 'VERIFIED: BONAFIDE AUDIO';
+        decisionTitle.innerText = 'Authentic Human Voice Verified';
+        decisionTitle.className = 'text-2xl sm:text-3xl font-extrabold text-emerald-400 mt-1 tracking-tight';
+        decisionSubtitle.innerText = `Natural acoustic spectral characteristics confirmed with ${bonafidePercent}% confidence.`;
+        decisionIconBox.className = 'w-16 h-16 rounded-2xl bg-emerald-950/80 border border-emerald-600 flex items-center justify-center shrink-0';
+        decisionIconBox.innerHTML = `
+          <svg class="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        `;
+        spoofProgressBar.className = 'h-full rounded-full progress-gradient bg-emerald-500 shadow-lg shadow-emerald-500/50';
+      }
+    }
+
+    function setUIStandbyStreaming() {
+      decisionCard.className = 'glass-card rounded-2xl p-6 transition-all duration-300 border-2 border-cyan-500/60 glow-cyan';
+      decisionBadge.className = 'text-xs uppercase px-2.5 py-1 rounded-md font-mono font-bold tracking-wider bg-cyan-950 text-cyan-300 border border-cyan-700';
+      decisionBadge.innerText = 'STREAMING LIVE';
+      decisionTitle.innerText = 'Buffering & Analyzing Audio...';
+      decisionTitle.className = 'text-2xl sm:text-3xl font-extrabold text-white mt-1 tracking-tight';
+      decisionSubtitle.innerText = 'Ingesting 16kHz PCM chunks. Sliding window inference triggers every 500ms.';
+    }
+
+    function setUIIdle() {
+      decisionCard.className = 'glass-card rounded-2xl p-6 transition-all duration-300 border-2 border-slate-700/60';
+      decisionBadge.className = 'text-xs uppercase px-2.5 py-1 rounded-md font-mono font-bold tracking-wider bg-slate-800 text-slate-300 border border-slate-700';
+      decisionBadge.innerText = 'STANDBY';
+      decisionTitle.innerText = 'Awaiting Live Audio Stream';
+      decisionTitle.className = 'text-2xl sm:text-3xl font-extrabold text-white mt-1 tracking-tight';
+      decisionSubtitle.innerText = "Click 'Start Audio Streaming' to ingest 16kHz microphone stream.";
+      decisionIconBox.className = 'w-16 h-16 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center shrink-0';
+      decisionIconBox.innerHTML = `
+        <svg class="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      `;
+      vadBadge.className = 'text-xs px-2.5 py-1 rounded-md font-mono bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1.5';
+      vadDot.className = 'w-2 h-2 rounded-full bg-slate-500';
+      vadText.innerText = 'VAD: IDLE';
+      spoofProgressBar.style.width = '0%';
+      bonafideScoreVal.innerText = '0.00%';
+      spoofScoreVal.innerText = '0.00%';
+    }
+
+    function appendLogRow(data) {
+      if (emptyLogRow && emptyLogRow.parentNode) {
+        emptyLogRow.remove();
+      }
+
+      const timeStr = new Date(data.timestamp * 1000).toLocaleTimeString() + '.' + String(Math.floor((data.timestamp % 1) * 1000)).padStart(3, '0');
+      const isSpoof = data.is_spoof;
+
+      const row = document.createElement('tr');
+      row.className = 'hover:bg-slate-900/50 transition-colors';
+      row.innerHTML = `
+        <td class="py-2.5 px-4 text-slate-400">${timeStr}</td>
+        <td class="py-2.5 px-4 text-cyan-400 font-bold">#${data.window_index}</td>
+        <td class="py-2.5 px-4">
+          <span class="px-2 py-0.5 rounded text-[10px] ${data.vad_active ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-slate-800 text-slate-400'}">
+            ${data.vad_active ? 'SPEECH' : 'SILENCE'} (${(data.vad_prob * 100).toFixed(0)}%)
+          </span>
+        </td>
+        <td class="py-2.5 px-4">
+          <span class="px-2 py-0.5 rounded font-bold text-[10px] ${isSpoof ? 'bg-rose-950 text-rose-400 border border-rose-700' : 'bg-emerald-950 text-emerald-400 border border-emerald-700'}">
+            ${data.label}
+          </span>
+        </td>
+        <td class="py-2.5 px-4 text-emerald-400 font-semibold">${(data.bonafide_confidence * 100).toFixed(1)}%</td>
+        <td class="py-2.5 px-4 text-rose-400 font-semibold">${(data.spoof_confidence * 100).toFixed(1)}%</td>
+        <td class="py-2.5 px-4 text-white">${data.inference_latency_ms} ms</td>
+        <td class="py-2.5 px-4 text-cyan-300">${data.total_pipeline_latency_ms} ms</td>
+      `;
+
+      logTableBody.insertBefore(row, logTableBody.firstChild);
+
+      // Retain max 25 rows
+      while (logTableBody.children.length > 25) {
+        logTableBody.removeChild(logTableBody.lastChild);
+      }
+    }
+
+    // Oscilloscope Waveform Renderer
+    function drawWaveform() {
+      if (!isStreaming || !analyser) return;
+
+      const canvas = waveformCanvas;
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width = canvas.parentElement.clientWidth;
+      const height = canvas.height = canvas.parentElement.clientHeight;
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyser.getByteTimeDomainData(dataArray);
+
+      ctx.fillStyle = '#05070d';
+      ctx.fillRect(0, 0, width, height);
+
+      // Grid Lines
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#1e293b';
+      ctx.beginPath();
+      ctx.moveTo(0, height / 2);
+      ctx.lineTo(width, height / 2);
+      ctx.stroke();
+
+      // Waveform Line
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#06b6d4';
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = '#06b6d4';
+      ctx.beginPath();
+
+      const sliceWidth = width * 1.0 / bufferLength;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * height / 2;
+
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+        x += sliceWidth;
+      }
+
+      ctx.lineTo(width, height / 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      animationFrameId = requestAnimationFrame(drawWaveform);
+    }
+
+    // Event Listeners
+    btnStart.addEventListener('click', startStreaming);
+    btnStop.addEventListener('click', stopStreaming);
+    btnClearLogs.addEventListener('click', () => {
+      logTableBody.innerHTML = `
+        <tr id="emptyLogRow">
+          <td colspan="8" class="py-6 text-center text-slate-500">No audio classifications recorded yet.</td>
+        </tr>
+      `;
+    });
+
+    // Auto-initialize WebSocket on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      initWebSocket();
+    });
+  </script>
+</body>
+</html>

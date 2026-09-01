@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  voice-spoof-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voice-spoof-gateway
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
